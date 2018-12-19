@@ -1,67 +1,98 @@
-%Self Organizing Map
-
 close all, clear all, clc, format compact
-tic;
+%Program Face Recognition
+%NPM: 1506729033
+%LVQ
 
-n = 100 %jumlah input
-%----------------PERSIAPAN DATA----------------------%
-%Reading Data:
-    data_all = zeros(160,1600);
-    counter = 1;
-    D = 'DatasetFR';
-    J = dir(fullfile(D,'*.jpg')); % pattern to match filenames.
-    for k = 1:numel(J)
-        F = fullfile(D,J(k).name);
-        I = imread(F);
-        a = transpose(im2double(I));
-        a = transpose(a(:));
-        data_all(counter,:) = a;
-        counter = counter+1;
+%Hasil Variabel yang akan diinput setelah PCA:
+    run('readFile_rizky.m');
+    run('pca_rizky.m');
+
+%Inisialisasi Variabel untuk LVQ
+    feature = pca_Dim;
+    cluster = 10;
+   
+    total_train = 0.5*totalImage;
+    total_test = 0.5*totalImage;
+    
+    %inisialisasi alpha, decaying rate, dan alpha rate
+    alpha = 0.5; 
+    decay_rate = 0.5;
+    alpha_target = 0.01;
+
+    %Pembagian Data Training dan Data 
+    train_data = pca_Data(1:2:totalImage,:);
+    test_data = pca_Data(2:2:totalImage,:);
+    test_target = target_all_foto(2:2:totalImage,:);
+    
+%SOM Proses
+    %Inisialisasi Bobot vektor dengan mengambil perwakilan:
+    W = zeros(cluster,feature);
+    for m = 1:cluster
+        W(m,:) = train_data(randi(cluster-1)+(cluster*(m-1)),:);
     end
-
-    P = dir(fullfile(D,'*.png')); % pattern to match filenames.
-    for k = 1:numel(P)
-        F = fullfile(D,P(k).name);
-        I = imread(F);
-        a = transpose(im2double(I));
-        a = transpose(a(:));
-        data_all(counter,:) = a;
-        counter = counter+1;
-    end
     
+    %Inisialisasi Variabel
+    epoch = 0;
     
-%Standarisasi Data
-    dataIn_std = zscore(data_all);
-    
-%Mencari Data Covariance:
-    cIn = cov(dataIn_std);
-
-%Proses PCA:
-    %Eigen Value Decomposition:
-    [V, D] = eig(cIn);
-
-    %Perubahan Letak Eigenvektor Berdasarkan EigenValue:
-    D2=diag(sort(diag(D),'descend'));
-    [c, ind]=sort(diag(D),'descend');
-    V2=V(:,ind);
-    
-    %Hasil Variabel yang akan diinput setelah PCA:
-    new_data = dataIn_std * V2(:, 1:n);
-    
-%Pemberian Nilai Benar untuk tiap Data:
-    % output class: a=aaliyah, b=albert, c=fahmi, d=jan, e=johanes,
-    % f=nadhif, g=tiwi,h=rizky
-    temp(1:8,1:8) = 0;
-    for i=1:1:8
-        temp(i,i) = 1;
-    end
-    output = zeros(160,8);
-    counter = 0;
-    for i=1:8
-        for j=1:20
-            output(counter+j,:) = temp(i,:);
+    %SOM Training
+    while true
+        %penambahan epoch tiap training:
+        epoch = epoch + 1;
+        
+        %train sebanyak data dalam epoch
+        for n=1:total_train
+            
+            %Perhitiungan Euclidean distance antara vektor input dengan
+            %tiap bobot
+            d = zeros(cluster,1);
+            for m=1:cluster
+                for k=1:feature
+                    d(m) = d(m) + (W(m,k) - train_data(n,k))^2;
+                end
+                d(m) = d(m)^0.5;
+            end
+            
+            %Mencari Index Minimum:
+            [d_min, d_min_index] = min(d);
+            
+            %Pengecekan Target Kelas Seharusnya:
+            if test_target(n,d_min_index) == 1
+                %Apabila benar maka di update sesuai dengan rumus ini:
+                W(d_min_index,:) = W(d_min_index,:) + (alpha*(train_data(n,:) - W(d_min_index,:)));
+            else
+                %Apabila salah maka di update sesuai dengan rumus ini:
+                W(d_min_index,:) = W(d_min_index,:) - (alpha*(train_data(n,:) - W(d_min_index,:)));
+            end
         end
-        counter = counter+j;
+        
+        %Modifikasi Laju Pembelajaran
+        alpha = decay_rate*alpha;
+        if alpha <= alpha_target
+            break;
+        end
     end
- 
-%----------------------- Pembelajaran LVQ ---------------------------% 
+    
+    %SOM Testing:
+    RR = 0;
+    for n=1:total_test
+        %Menghitung Euclidean Antara Vektor
+         d = zeros(cluster,1);
+        for m=1:cluster
+            for k=1:feature
+                d(m) = d(m) + (W(m,k) - train_data(n,k))^2;
+            end
+            d(m) = d(m)^0.5;
+        end
+        
+        %Mencari Index Minimum
+        [d_min, d_min_index] = min(d);
+        
+        %Pengecekan dengan data target
+        if test_target(n,d_min_index) == 1
+            RR = RR + 1;
+        end
+    end
+    RRpersen = RR/100;
+    fprintf('RR = %d/100\nRate = %.2f%%\nTotal Epoch = %d\n',RR,RRpersen*100,epoch)
+    
+  
